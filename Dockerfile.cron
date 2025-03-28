@@ -1,0 +1,46 @@
+# Dockerfile for cron service
+FROM ubuntu:24.04
+
+# Install necessary packages
+RUN apt-get update && apt-get install -y \
+    bash \
+    cron \
+    tzdata \
+    wget \
+    gnupg2 \
+    lsb-release \
+    mariadb-client
+
+# Add PostgreSQL repository
+RUN echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list
+RUN wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | apt-key add -
+
+# Install PostgreSQL client tools for version 17.4
+RUN apt-get update && apt-get install -y postgresql-client-17
+
+# Set the timezone
+ENV TZ=Asia/Kolkata
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+
+# Copy the cron job script
+COPY ./src/cron/dump_db.sh /cron/dump_db.sh
+
+# Make the script executable
+RUN chmod +x /cron/dump_db.sh
+
+# Set up the cron job
+RUN echo "* * * * * POSTGRES_USER=${POSTGRES_USER} POSTGRES_PASSWORD=${POSTGRES_PASSWORD} MYSQL_USER=${MYSQL_USER} MYSQL_PASSWORD=${MYSQL_PASSWORD} bash /cron/dump_db.sh >> /var/log/cron.log 2>&1" > /etc/cron.d/dump_db
+RUN echo "" >> /etc/cron.d/dump_db  # Add an empty line
+RUN chmod 0644 /etc/cron.d/dump_db
+RUN crontab /etc/cron.d/dump_db
+
+# Set environment variables
+ENV POSTGRES_USER=${POSTGRES_USER}
+ENV POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+ENV POSTGRES_DB=${POSTGRES_DB}
+ENV MYSQL_USER=${MYSQL_USER}
+ENV MYSQL_PASSWORD=${MYSQL_PASSWORD}
+ENV MYSQL_DATABASE=${MYSQL_DATABASE}
+
+# Run cron in the foreground
+CMD ["cron", "-f"]
